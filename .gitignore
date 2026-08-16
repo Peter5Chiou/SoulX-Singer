@@ -40,3 +40,6 @@ deploy/
 # midi editor
 node_modules/
 dist/
+*.mid
+*.xml
+*.musicxml

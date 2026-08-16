@@ -2,6 +2,7 @@ import os
 import random
 import shutil
 import sys
+import time
 import traceback
 import gc
 from datetime import datetime
@@ -11,6 +12,7 @@ from typing import Literal, Tuple
 import numpy as np
 import torch
 import librosa
+import mido
 import soundfile as sf
 import gradio as gr
 
@@ -117,6 +119,10 @@ _I18N_KEY2LANG = dict(
     prompt_midi_label=dict(en="Prompt MIDI", zh="Prompt MIDI"),
     target_meta_label=dict(en="Target metadata", zh="Target 元数据"),
     target_midi_label=dict(en="Target MIDI", zh="Target MIDI"),
+    import_midi_title=dict(en="Import Midi", zh="导入 MIDI"),
+    import_tracks_label=dict(en="Tracks to Import", zh="选择要导入的音轨"),
+    import_ok_label=dict(en="OK", zh="确定"),
+    import_cancel_label=dict(en="Cancel", zh="取消"),
     prompt_wav_label=dict(en="Prompt WAV (reference)", zh="Prompt WAV（参考音色）"),
     generated_audio_label=dict(en="Generated merged audio", zh="合成结果音频"),
     prompt_lyric_lang_label=dict(en="Prompt lyric language", zh="Prompt 歌词语种"),
@@ -134,6 +140,8 @@ _I18N_KEY2LANG = dict(
     option_no=dict(en="no", zh="否"),
     auto_shift_label=dict(en="Auto pitch shift", zh="自动变调"),
     pitch_shift_label=dict(en="Pitch shift (semitones)", zh="指定变调（半音）"),
+    n_step_label=dict(en="n_step (diffusion steps)", zh="采样步数 n_step"),
+    cfg_label=dict(en="cfg scale", zh="cfg系数"),
     control_type_label=dict(en="Control type", zh="控制类型"),
     control_melody=dict(en="melody-controlled", zh="旋律控制"),
     control_score=dict(en="score-controlled", zh="乐谱控制"),
@@ -326,6 +334,8 @@ class AppState:
         session_base: Path,
         auto_shift: bool,
         pitch_shift: int,
+        n_step: int,
+        cfg: float,
     ) -> Tuple[bool, str, Path | None, Path | None, Path | None]:
         if control not in ("melody", "score"):
             control = "score"
@@ -348,8 +358,16 @@ class AppState:
         args.pitch_shift = int(pitch_shift)
         args.control = control
         args.use_fp16 = self.use_fp16
+        args.n_steps = int(n_step)
+        args.cfg = float(cfg)
         try:
+            _t0 = time.perf_counter()
             svs_process(args, self.svs_config, self.svs_model)
+            _elapsed = time.perf_counter() - _t0
+            print(
+                f"[SVS] {control} synthesis done in {_elapsed:.2f}s "
+                f"({_elapsed / 60:.2f} min), output_dir={save_dir}"
+            )
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -368,6 +386,8 @@ class AppState:
         control: str,
         auto_shift: bool,
         pitch_shift: int,
+        n_step: int,
+        cfg: float,
         save_dir: Path | None = None,
     ) -> Tuple[bool, str, Path | None]:
         """Run SVS from explicit prompt wav and metadata paths."""
@@ -389,13 +409,15 @@ class AppState:
             session_base=save_dir,
             auto_shift=auto_shift,
             pitch_shift=pitch_shift,
+            n_step=n_step,
+            cfg=cfg,
         )
         if not ok or merged is None:
             return False, msg or "svs failed", None
         return True, "svs inference done", merged
 
 
-APP_STATE = AppState(use_fp16="--fp16" in sys.argv)
+APP_STATE = AppState(use_fp16="--no-fp16" not in sys.argv)
 
 def _edit_metadata(
     meta,
@@ -418,6 +440,212 @@ def _edit_metadata(
     except Exception:
         _print_exception("_edit_metadata")
         return meta
+
+
+_GM_PROGRAM_NAMES = [
+    "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano", "Honky-tonk Piano",
+    "Electric Piano 1", "Electric Piano 2", "Harpsichord", "Clavi",
+    "Celesta", "Glockenspiel", "Music Box", "Vibraphone",
+    "Marimba", "Xylophone", "Tubular Bells", "Dulcimer",
+    "Drawbar Organ", "Percussive Organ", "Rock Organ", "Church Organ",
+    "Reed Organ", "Accordion", "Harmonica", "Tango Accordion",
+    "Acoustic Guitar (nylon)", "Acoustic Guitar (steel)", "Electric Guitar (jazz)", "Electric Guitar (clean)",
+    "Electric Guitar (muted)", "Overdriven Guitar", "Distortion Guitar", "Guitar Harmonics",
+    "Acoustic Bass", "Electric Bass (finger)", "Electric Bass (pick)", "Fretless Bass",
+    "Slap Bass 1", "Slap Bass 2", "Synth Bass 1", "Synth Bass 2",
+    "Violin", "Viola", "Cello", "Contrabass",
+    "Tremolo Strings", "Pizzicato Strings", "Orchestral Harp", "Timpani",
+    "String Ensemble 1", "String Ensemble 2", "Synth Strings 1", "Synth Strings 2",
+    "Choir Aahs", "Voice Oohs", "Synth Voice", "Orchestra Hit",
+    "Trumpet", "Trombone", "Tuba", "Muted Trumpet",
+    "French Horn", "Brass Section", "Synth Brass 1", "Synth Brass 2",
+    "Soprano Sax", "Alto Sax", "Tenor Sax", "Baritone Sax",
+    "Oboe", "English Horn", "Bassoon", "Clarinet",
+    "Piccolo", "Flute", "Recorder", "Pan Flute",
+    "Blown Bottle", "Shakuhachi", "Whistle", "Ocarina",
+    "Lead 1 (square)", "Lead 2 (sawtooth)", "Lead 3 (calliope)", "Lead 4 (chiff)",
+    "Lead 5 (charang)", "Lead 6 (voice)", "Lead 7 (fifths)", "Lead 8 (bass + lead)",
+    "Pad 1 (new age)", "Pad 2 (warm)", "Pad 3 (polysynth)", "Pad 4 (choir)",
+    "Pad 5 (bowed)", "Pad 6 (metallic)", "Pad 7 (halo)", "Pad 8 (sweep)",
+    "FX 1 (rain)", "FX 2 (soundtrack)", "FX 3 (crystal)", "FX 4 (atmosphere)",
+    "FX 5 (brightness)", "FX 6 (goblins)", "FX 7 (echoes)", "FX 8 (sci-fi)",
+    "Sitar", "Banjo", "Shamisen", "Koto",
+    "Kalimba", "Bag pipe", "Fiddle", "Shanai",
+    "Tinkle Bell", "Agogo", "Steel Drums", "Woodblock",
+    "Taiko Drum", "Melodic Tom", "Synth Drum", "Reverse Cymbal",
+    "Guitar Fret Noise", "Breath Noise", "Seashore", "Bird Tweet",
+    "Telephone Ring", "Helicopter", "Applause", "Gunshot",
+]
+
+
+def _midi_note_name(note: int) -> str:
+    names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    return f"{names[note % 12]}{note // 12 - 1}"
+
+
+def _midi_track_info(midi_path: str) -> list:
+    """Parse a MIDI file into per-channel import info (name, note count, range, instrument).
+
+    Synthesizer V splits an imported MIDI into one selectable track per MIDI channel, so we
+    group notes by (mido track, channel) instead of by mido track alone.
+    """
+    mid = mido.MidiFile(midi_path)
+    tracks = []
+    seq = 0
+    for ti, track in enumerate(mid.tracks):
+        track_name = ""
+        prog_by_channel = {}
+        notes_by_channel = {}
+        for msg in track:
+            if msg.type == "track_name" and msg.name.strip():
+                track_name = msg.name.strip()
+            elif msg.type == "program_change":
+                prog_by_channel[msg.channel] = msg.program
+            elif msg.type in ("note_on", "note_off") and getattr(msg, "note", None) is not None:
+                if msg.type == "note_on" and msg.velocity > 0:
+                    notes_by_channel.setdefault(msg.channel, []).append(msg.note)
+        if not notes_by_channel:
+            seq += 1
+            label = f"Track {seq} (0 notes, - - -"
+            if track_name:
+                label += f", {track_name}"
+            label += ")"
+            tracks.append(
+                {
+                    "key": f"{ti}:meta",
+                    "name": track_name,
+                    "notes": 0,
+                    "low": "-",
+                    "high": "-",
+                    "instrument": track_name,
+                    "label": label,
+                }
+            )
+            continue
+        for ch in sorted(notes_by_channel):
+            notes = notes_by_channel[ch]
+            seq += 1
+            low = _midi_note_name(min(notes))
+            high = _midi_note_name(max(notes))
+            program = prog_by_channel.get(ch)
+            if program is not None:
+                instrument = _GM_PROGRAM_NAMES[program] if 0 <= program < len(_GM_PROGRAM_NAMES) else str(program)
+            elif track_name:
+                instrument = track_name
+            else:
+                instrument = ""
+            label = f"Track {seq} ({len(notes)} notes, {low} - {high}"
+            if instrument:
+                label += f", {instrument}"
+            label += ")"
+            tracks.append(
+                {
+                    "key": f"{ti}:{ch}",
+                    "name": track_name,
+                    "notes": len(notes),
+                    "low": low,
+                    "high": high,
+                    "instrument": instrument,
+                    "label": label,
+                }
+            )
+    return tracks
+
+
+def _track_has_notes(track) -> bool:
+    return any(
+        getattr(msg, "note", None) is not None
+        and (msg.type == "note_on" and msg.velocity > 0 or msg.type == "note_off")
+        for msg in track
+    )
+
+
+def _filter_midi_tracks(midi_path: str, selected_keys, out_path: str) -> None:
+    """Write a new MIDI file keeping only the selected (track:channel) note events.
+
+    Keys look like '<track_idx>:<channel>' (note channels) or '<track_idx>:meta'
+    (note-less / conductor tracks). Note-less tracks are always preserved so tempo and
+    time-signature metadata survive.
+    """
+    mid = mido.MidiFile(midi_path)
+    keep_by_track = {}
+    for key in selected_keys or []:
+        try:
+            ti_s, ch_s = str(key).split(":", 1)
+        except ValueError:
+            continue
+        ti = int(ti_s)
+        keep_by_track.setdefault(ti, set())
+        if ch_s != "meta":
+            keep_by_track[ti].add(int(ch_s))
+    new_mid = mido.MidiFile(ticks_per_beat=mid.ticks_per_beat)
+    for ti, track in enumerate(mid.tracks):
+        keep_ch = keep_by_track.get(ti)
+        if keep_ch is None:
+            if not _track_has_notes(track):
+                new_mid.tracks.append(track)
+            continue
+        new_track = mido.MidiTrack()
+        for msg in track:
+            if msg.type in ("note_on", "note_off"):
+                if getattr(msg, "channel", None) in keep_ch:
+                    new_track.append(msg)
+            elif msg.type in (
+                "program_change",
+                "control_change",
+                "pitchwheel",
+                "polytouch",
+                "aftertouch",
+            ):
+                if msg.channel in keep_ch:
+                    new_track.append(msg)
+            else:
+                new_track.append(msg)
+        new_mid.tracks.append(new_track)
+    new_mid.save(out_path)
+
+
+def _prepare_target_import(midi):
+    """Scan the uploaded target MIDI and expose its tracks for selection in the panel."""
+    try:
+        midi = _resolve_file_path(midi)
+        if not midi:
+            return gr.update(choices=[], value=[]), gr.update()
+        info = _midi_track_info(midi)
+        choices = [(t["label"], t["key"]) for t in info]
+        selected = [t["key"] for t in info if t["notes"] > 0]
+        return gr.update(choices=choices, value=selected), gr.update(visible=True)
+    except Exception:
+        _print_exception("_prepare_target_import")
+        return gr.update(choices=[], value=[]), gr.update()
+
+
+def _import_selected_target_tracks(midi, audio, language, selected):
+    """Convert only the user-selected tracks of the target MIDI into metadata."""
+    try:
+        midi = _resolve_file_path(midi)
+        if not midi:
+            return gr.skip(), gr.update(visible=False)
+        selected = list(selected or [])
+        if not selected:
+            return gr.skip(), gr.update(visible=False)
+        audio = _normalize_audio_input(audio)
+
+        session_base = _session_dir()
+        meta_path = session_base / "transcriptions" / "target" / "metadata.json"
+        filtered_midi_path = session_base / "transcriptions" / "target" / "import_selected.mid"
+        filtered_midi_path.parent.mkdir(parents=True, exist_ok=True)
+        _filter_midi_tracks(midi, selected, str(filtered_midi_path))
+        APP_STATE.midi_parser.midi2meta(
+            str(filtered_midi_path),
+            str(meta_path),
+            audio,
+            language=language,
+        )
+        return str(meta_path), gr.update(visible=False)
+    except Exception:
+        _print_exception("_import_selected_target_tracks")
+        return gr.update(), gr.update(visible=False)
 
 
 def _transcribe_prompt(
@@ -526,6 +754,8 @@ def _run_synthesis(
     auto_shift,
     pitch_shift,
     seed: int,
+    n_step: int,
+    cfg: float,
 ):
     """Run singing synthesis from prompt audio + prompt metadata + target metadata."""
     try:
@@ -555,6 +785,8 @@ def _run_synthesis(
             control=control,
             auto_shift=auto_shift,
             pitch_shift=int(pitch_shift),
+            n_step=int(n_step),
+            cfg=float(cfg),
         )
         if not ok or merged is None:
             print(msg or "synthesis failed", file=sys.stderr, flush=True)
@@ -706,6 +938,18 @@ def render_interface() -> gr.Blocks:
                     interactive=False,
                     visible=False,
                 )
+
+        with gr.Group(visible=False) as import_panel:
+            gr.Markdown(f"### {_i18n('import_midi_title')}")
+            import_tracks = gr.Checkboxgroup(
+                label=_i18n("import_tracks_label"),
+                choices=[],
+                interactive=True,
+            )
+            with gr.Row():
+                import_ok = gr.Button(_i18n("import_ok_label"), variant="primary")
+                import_cancel = gr.Button(_i18n("import_cancel_label"))
+
         with gr.Accordion(_i18n("section_synthesis"), open=True) as accordion_synthesis:
             with gr.Row(equal_height=True):
                 control_radio = gr.Dropdown(
@@ -734,6 +978,24 @@ def render_interface() -> gr.Blocks:
                     label=_i18n("seed_label"),
                     value=12306,
                     step=1,
+                    interactive=True,
+                    scale=1,
+                )
+                n_step_input = gr.Slider(
+                    label=_i18n("n_step_label"),
+                    value=16,
+                    minimum=1,
+                    maximum=200,
+                    step=1,
+                    interactive=True,
+                    scale=1,
+                )
+                cfg_input = gr.Slider(
+                    label=_i18n("cfg_label"),
+                    value=3.0,
+                    minimum=0.0,
+                    maximum=10.0,
+                    step=0.1,
                     interactive=True,
                     scale=1,
                 )
@@ -788,6 +1050,8 @@ def render_interface() -> gr.Blocks:
                 gr.update(label=_i18n("auto_shift_label"), choices=yes_no_choices),
                 gr.update(label=_i18n("pitch_shift_label")),
                 gr.update(label=_i18n("seed_label")),
+                gr.update(label=_i18n("n_step_label")),
+                gr.update(label=_i18n("cfg_label")),
                 gr.update(value=_i18n("synthesis_btn_label")),
                 gr.update(label=_i18n("generated_audio_label")),
                 gr.update(label=_i18n("display_lang_label")),
@@ -818,6 +1082,8 @@ def render_interface() -> gr.Blocks:
                 auto_shift,
                 pitch_shift,
                 seed_input,
+                n_step_input,
+                cfg_input,
                 synthesis_btn,
                 output_audio,
                 lang_choice,
@@ -856,9 +1122,18 @@ def render_interface() -> gr.Blocks:
             outputs=[target_metadata, target_midi, target_vocal],
         )
         target_midi.upload(
-            fn=_edit_metadata,
-            inputs=[target_metadata, target_midi, target_vocal, target_lyric_lang],
-            outputs=[target_metadata],
+            fn=_prepare_target_import,
+            inputs=[target_midi],
+            outputs=[import_tracks, import_panel],
+        )
+        import_ok.click(
+            fn=_import_selected_target_tracks,
+            inputs=[target_midi, target_vocal, target_lyric_lang, import_tracks],
+            outputs=[target_metadata, import_panel],
+        )
+        import_cancel.click(
+            fn=lambda: gr.update(visible=False),
+            outputs=[import_panel],
         )
 
         synthesis_btn.click(
@@ -871,6 +1146,8 @@ def render_interface() -> gr.Blocks:
                 auto_shift,
                 pitch_shift,
                 seed_input,
+                n_step_input,
+                cfg_input,
             ],
             outputs=[output_audio],
         )
@@ -883,7 +1160,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=7860, help="Gradio server port")
     parser.add_argument("--share", action="store_true", help="Create public link")
-    parser.add_argument("--fp16", action="store_true", help="Use FP16 for SVS model and inference")
+    parser.add_argument("--no-fp16", action="store_true", help="Disable FP16 for SVS model and inference (FP16 is the default)")
     args = parser.parse_args()
 
     page = render_interface()

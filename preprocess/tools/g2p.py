@@ -3,6 +3,7 @@ import re
 import ToJyutping
 from g2pM import G2pM
 from g2p_en import G2p as G2pE
+from opencc import OpenCC
 
 _EN_WORD_RE = re.compile(r"^[A-Za-z]+(?:'[A-Za-z]+)*$")
 _ZH_WORD_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -13,6 +14,10 @@ ZH_FLAG = "zh_"
 
 g2p_zh = G2pM()
 g2p_en = G2pE()
+
+# g2pM's Mandarin dictionary only covers Simplified Chinese, so Traditional
+# lyrics must be converted before g2p.
+_opencc_t2s = OpenCC("t2s")
 
 
 def is_chinese_char(word: str) -> bool:
@@ -44,7 +49,7 @@ def g2p_transform(words, lang):
             transformed_words[idx] = w
             continue
 
-        w = w.replace("?", "").replace(".", "").replace("!", "").replace(",", "")
+        w = re.sub(r"[^A-Za-z\u4e00-\u9fff']+", "", w)
 
         if is_chinese_char(w):
             zh_words.append([idx, w])
@@ -63,7 +68,7 @@ def g2p_transform(words, lang):
             g2pm_rst = g2p_cantonese(sent)       # with tone
             g2pm_rst = [YUE_FLAG + k[1] for k in g2pm_rst]
         else:
-            g2pm_rst = g2p_mandarin(sent)
+            g2pm_rst = g2p_mandarin(_opencc_t2s.convert(sent))
             g2pm_rst = [ZH_FLAG + k for k in g2pm_rst]
         for p, w in zip([k[0] for k in zh_words], g2pm_rst):
             transformed_words[p] = w

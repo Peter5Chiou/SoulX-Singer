@@ -4,7 +4,8 @@ import { PianoRoll } from './components/PianoRoll'
 import { LyricTable } from './components/LyricTable'
 import { AudioTrack } from './components/AudioTrack'
 import { useMidiStore } from './store/useMidiStore'
-import { exportMidi, importMidiFile } from './lib/midi'
+import { exportMidi, importMidiFile, inspectMidiChannels, midiNoteName } from './lib/midi'
+import type { MidiChannelInfo } from './lib/midi'
 import type { TimeSignature } from './types'
 import type { Lang } from './i18n'
 import { getTranslations } from './i18n'
@@ -50,6 +51,8 @@ function App() {
   const [horizontalZoom, setHorizontalZoom] = useState(1)
   const [verticalZoom, setVerticalZoom] = useState(1)
   const [focusLyricId, setFocusLyricId] = useState<string | null>(null)
+  const [pendingImport, setPendingImport] = useState<{ file: File; channels: MidiChannelInfo[] } | null>(null)
+  const [pendingSelected, setPendingSelected] = useState<string[]>([])
   // Selection range for loop playback (in seconds)
   const [selectionStart, setSelectionStart] = useState<number | null>(null)
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null)
@@ -294,17 +297,37 @@ function App() {
   const handleImportClick = () => fileInputRef.current?.click()
   const handleAudioImportClick = () => audioInputRef.current?.click()
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
+  const applyImport = async (file: File, channels: number[]) => {
     try {
-      const snapshot = await importMidiFile(file)
+      const snapshot = await importMidiFile(file, channels)
       setNotes(snapshot.notes)
       setTempo(snapshot.tempo)
       setTimeSignature(snapshot.timeSignature as TimeSignature)
       setPpq(snapshot.ppq)  // Preserve original ppq for accurate export
       setStatus(t.imported(file.name))
+    } catch (error) {
+      console.error(error)
+      setStatus(t.importFailed)
+    } finally {
+      setPendingImport(null)
+      setPendingSelected([])
+    }
+  }
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const channels = await inspectMidiChannels(file)
+      if (channels.length > 1) {
+        // Multi-channel MIDI -> ask the user which channel(s) to import
+        setPendingImport({ file, channels })
+        setPendingSelected(channels.filter((c) => c.notes > 0).map((c) => c.key))
+      } else {
+        // Single/no channel -> import directly
+        await applyImport(file, channels.map((c) => c.channel))
+      }
     } catch (error) {
       console.error(error)
       setStatus(t.importFailed)
@@ -364,6 +387,51 @@ function App() {
     const fixCount = fixOverlaps()
     if (fixCount > 0) {
       setStatus(t.fixedOverlaps(fixCount))
+    } else {
+      setStatus(t.noOverlaps)
+    }
+  }
+
+  // Shift overlapping notes right by moving noteB and all subsequent notes to start after noteA ends
+  // Returns the number of shifted overlaps
+  const shiftOverlapsRight = (): number => {
+    if (notes.length < 2) return 0
+
+    const sortedNotes = [...notes].map((n) => ({ ...n })).sort((a, b) => a.start - b.start)
+    let shiftCount = 0
+
+    for (let i = 0; i < sortedNotes.length - 1; i++) {
+      const noteA = sortedNotes[i]
+      const noteB = sortedNotes[i + 1]
+      const noteAEnd = noteA.start + noteA.duration
+
+      if (noteAEnd > noteB.start + 1e-5) {
+        const delta = noteAEnd - noteB.start
+        for (let j = i + 1; j < sortedNotes.length; j++) {
+          sortedNotes[j].start += delta
+        }
+        shiftCount++
+      }
+    }
+
+    if (shiftCount > 0) {
+      const noteMap = new Map(sortedNotes.map((n) => [n.id, n.start]))
+      setNotes(
+        notes.map((n) => {
+          const newStart = noteMap.get(n.id)
+          return newStart !== undefined ? { ...n, start: newStart } : n
+        })
+      )
+    }
+
+    return shiftCount
+  }
+
+  // UI handler for shift overlaps right button
+  const handleShiftOverlapsRight = () => {
+    const shiftCount = shiftOverlapsRight()
+    if (shiftCount > 0) {
+      setStatus(t.shiftedOverlaps(shiftCount))
     } else {
       setStatus(t.noOverlaps)
     }
@@ -433,6 +501,9 @@ function App() {
           </div>
           <button className="soft" onClick={handleFixOverlaps} title={t.fixOverlapsTooltip}>
             {t.fixOverlaps}
+          </button>
+          <button className="soft" onClick={handleShiftOverlapsRight} title={t.shiftOverlapsRightTooltip}>
+            {t.shiftOverlapsRight}
           </button>
           <button className="icon-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
             {theme === 'dark' ? (
@@ -668,6 +739,55 @@ function App() {
           e.currentTarget.volume = audioVolume / 100
         }}
       />
+
+      {pendingImport && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3 className="modal-title">{t.importChannelsTitle}</h3>
+            <p className="modal-hint">{t.importChannelsHint}</p>
+            <div className="modal-body">
+              {pendingImport.channels.map((c, i) => {
+                const low = c.low != null ? midiNoteName(c.low) : '-'
+                const high = c.high != null ? midiNoteName(c.high) : '-'
+                const label = `Track ${i + 1} (${c.notes} notes, ${low} - ${high}${c.name ? `, ${c.name}` : ''})`
+                return (
+                  <label key={c.key} className="modal-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={pendingSelected.includes(c.key)}
+                      onChange={(e) => {
+                        setPendingSelected((prev) =>
+                          e.target.checked
+                            ? [...prev, c.key]
+                            : prev.filter((k) => k !== c.key),
+                        )
+                      }}
+                    />
+                    <span>{label}</span>
+                  </label>
+                )
+              })}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="primary"
+                onClick={() => applyImport(pendingImport.file, pendingSelected.map((k) => Number(k)))}
+              >
+                {t.ok}
+              </button>
+              <button
+                className="soft"
+                onClick={() => {
+                  setPendingImport(null)
+                  setPendingSelected([])
+                }}
+              >
+                {t.cancel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

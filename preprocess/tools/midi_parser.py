@@ -375,6 +375,7 @@ def midi2notes(midi_path: str) -> List[Note]:
                     text = text.encode("latin1").decode("utf-8")
                 except Exception:
                     pass
+                text = text.strip()
                 lyrics.append((abs_ticks, text))
             elif msg.type == "note_on":
                 key = (msg.channel, msg.note)
@@ -459,8 +460,16 @@ def midi2notes(midi_path: str) -> List[Note]:
         lyric = n.get("lyric", "")
         # SoulX-Singer convention mapping from lyric token to note_type/text.
         if not lyric:
-            note_type = 2
-            text = "啦"
+            # A note with no lyric is a continuation of the previous syllable
+            # (e.g. a syllable held across multiple notes in a DAW), not a
+            # placeholder. So inherit the previous note's text as a slur.
+            prev_text = result[-1].note_text if result else ""
+            if prev_text not in ("", "<SP>", "-"):
+                note_type = 3
+                text = prev_text
+            else:
+                note_type = 2
+                text = "啦"
         elif lyric == "<SP>":
             note_type = 1
             text = "<SP>"

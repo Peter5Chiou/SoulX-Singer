@@ -46,7 +46,8 @@ A full-featured web MIDI editor for singing voice preprocess. It supports real-t
 ### ⚠️ Overlap Detection
 
 - **Visual highlight**: overlapping notes blink in red
-- **One-click fix**: remove all overlaps automatically
+- **Fix overlaps**: trim note end to the start of the next note
+- **Shift overlaps right**: shift overlapping subsequent notes to the right
 
 ### 📥 Import & Export
 

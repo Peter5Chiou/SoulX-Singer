@@ -1,0 +1,997 @@
+{
+  "time_signature": "3/4",
+  "measures": [
+    {
+      "measure_number": 1,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 0.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 0.0,
+          "duration_beats": 1.5
+        },
+        {
+          "pitch": "G4",
+          "beat": 1.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "G4",
+          "beat": 2.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 2,
+      "chords": [
+        {
+          "symbol": "F",
+          "beat": 3.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 3.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 4.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "A4",
+          "beat": 5.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 3,
+      "chords": [
+        {
+          "symbol": "Am",
+          "beat": 6.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 6.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 4,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 9.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 5,
+      "chords": [
+        {
+          "symbol": "Dm",
+          "beat": 12.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "F4",
+          "beat": 12.0,
+          "duration_beats": 1.5
+        },
+        {
+          "pitch": "F4",
+          "beat": 13.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "F4",
+          "beat": 14.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 6,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "A4",
+          "beat": 15.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "G4",
+          "beat": 16.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "F4",
+          "beat": 17.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 7,
+      "chords": [
+        {
+          "symbol": "Am",
+          "beat": 18.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 18.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 8,
+      "chords": [
+        {
+          "symbol": "Em",
+          "beat": 21.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 21.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 9,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 24.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 24.0,
+          "duration_beats": 1.5
+        },
+        {
+          "pitch": "E4",
+          "beat": 25.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "E4",
+          "beat": 26.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 10,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 27.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "F4",
+          "beat": 28.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "G4",
+          "beat": 29.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 11,
+      "chords": [
+        {
+          "symbol": "F",
+          "beat": 30.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "A4",
+          "beat": 30.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 12,
+      "chords": [
+        {
+          "symbol": "Dm",
+          "beat": 33.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 33.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 13,
+      "chords": [
+        {
+          "symbol": "Am",
+          "beat": 36.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 36.0,
+          "duration_beats": 1.5
+        },
+        {
+          "pitch": "G4",
+          "beat": 37.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "G4",
+          "beat": 38.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 14,
+      "chords": [
+        {
+          "symbol": "Bdim",
+          "beat": 39.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "B4",
+          "beat": 39.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "A4",
+          "beat": 40.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 41.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 15,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 42.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 42.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 16,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 45.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 17,
+      "chords": [
+        {
+          "symbol": "Em",
+          "beat": 48.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 48.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "G4",
+          "beat": 49.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "G4",
+          "beat": 50.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 18,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 51.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 51.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "F4",
+          "beat": 52.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "F4",
+          "beat": 53.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 19,
+      "chords": [
+        {
+          "symbol": "Am",
+          "beat": 54.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 54.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 20,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 57.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 21,
+      "chords": [
+        {
+          "symbol": "Em",
+          "beat": 60.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "B4",
+          "beat": 60.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 61.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "B4",
+          "beat": 62.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 22,
+      "chords": [
+        {
+          "symbol": "Bm",
+          "beat": 63.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "B4",
+          "beat": 63.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "C5",
+          "beat": 64.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "A4",
+          "beat": 65.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 23,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 66.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 66.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 24,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 69.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 25,
+      "chords": [
+        {
+          "symbol": "Am",
+          "beat": 72.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 72.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "C5",
+          "beat": 73.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "C5",
+          "beat": 74.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 26,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 75.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 76.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "A4",
+          "beat": 77.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 27,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 78.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 78.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 28,
+      "chords": [
+        {
+          "symbol": "Dm",
+          "beat": 81.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 81.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 29,
+      "chords": [
+        {
+          "symbol": "Am",
+          "beat": 84.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 84.0,
+          "duration_beats": 1.5
+        },
+        {
+          "pitch": "E4",
+          "beat": 85.5,
+          "duration_beats": 0.5
+        },
+        {
+          "pitch": "E4",
+          "beat": 86.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 30,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 87.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 87.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "F4",
+          "beat": 88.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "D4",
+          "beat": 89.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 31,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 90.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C4",
+          "beat": 90.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 32,
+      "chords": [
+        {
+          "symbol": "C7",
+          "beat": 93.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C4",
+          "beat": 93.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 33,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 96.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 96.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 34,
+      "chords": [
+        {
+          "symbol": "F",
+          "beat": 99.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 99.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "A4",
+          "beat": 100.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 101.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 35,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 102.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 102.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 36,
+      "chords": [
+        {
+          "symbol": "Em",
+          "beat": 105.0,
+          "duration_beats": 3.0
+        },
+        {
+          "symbol": "Am",
+          "beat": 105.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "C5",
+          "beat": 105.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 106.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "C5",
+          "beat": 107.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 37,
+      "chords": [
+        {
+          "symbol": "Dm",
+          "beat": 108.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "D5",
+          "beat": 108.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 38,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 111.0,
+          "duration_beats": 3.0
+        },
+        {
+          "symbol": "F",
+          "beat": 111.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "D5",
+          "beat": 111.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "C5",
+          "beat": 112.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "D5",
+          "beat": 113.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 39,
+      "chords": [
+        {
+          "symbol": "Em",
+          "beat": 114.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E5",
+          "beat": 114.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 40,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 117.0,
+          "duration_beats": 2.0
+        }
+      ]
+    },
+    {
+      "measure_number": 41,
+      "chords": [
+        {
+          "symbol": "F",
+          "beat": 120.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "A4",
+          "beat": 120.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 42,
+      "chords": [
+        {
+          "symbol": "Dm",
+          "beat": 123.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "A4",
+          "beat": 123.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "B4",
+          "beat": 124.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "C5",
+          "beat": 125.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 43,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 126.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 126.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 44,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 129.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "G4",
+          "beat": 129.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "G4",
+          "beat": 130.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "E4",
+          "beat": 131.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 45,
+      "chords": [
+        {
+          "symbol": "Dm",
+          "beat": 132.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "F4",
+          "beat": 132.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 46,
+      "chords": [
+        {
+          "symbol": "G",
+          "beat": 135.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "F4",
+          "beat": 135.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "G4",
+          "beat": 136.0,
+          "duration_beats": 1.0
+        },
+        {
+          "pitch": "F4",
+          "beat": 137.0,
+          "duration_beats": 1.0
+        }
+      ]
+    },
+    {
+      "measure_number": 47,
+      "chords": [
+        {
+          "symbol": "C",
+          "beat": 138.0,
+          "duration_beats": 3.0
+        }
+      ],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 138.0,
+          "duration_beats": 3.0
+        }
+      ]
+    },
+    {
+      "measure_number": 48,
+      "chords": [],
+      "melody": [
+        {
+          "pitch": "E4",
+          "beat": 141.0,
+          "duration_beats": 2.0
+        }
+      ]
+    }
+  ]
+}

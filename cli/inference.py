@@ -107,8 +107,8 @@ def process(args, config, model: torch.nn.Module):
                 infer_data,
                 auto_shift=args.auto_shift,
                 pitch_shift=args.pitch_shift,
-                n_steps=config.infer.n_steps,
-                cfg=config.infer.cfg,
+                n_steps=getattr(args, "n_steps", config.infer.n_steps),
+                cfg=getattr(args, "cfg", config.infer.cfg),
                 control=args.control,
                 use_fp16=args.use_fp16,
             )
