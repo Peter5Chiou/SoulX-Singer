@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import shutil
 import sys
@@ -119,6 +120,7 @@ _I18N_KEY2LANG = dict(
     prompt_midi_label=dict(en="Prompt MIDI", zh="Prompt MIDI"),
     target_meta_label=dict(en="Target metadata", zh="Target 元数据"),
     target_midi_label=dict(en="Target MIDI", zh="Target MIDI"),
+    target_midi_json_label=dict(en="Target MIDI repeat JSON (optional)", zh="Target MIDI 反覆資訊 JSON（選填）"),
     import_midi_title=dict(en="Import Midi", zh="导入 MIDI"),
     import_tracks_label=dict(en="Tracks to Import", zh="选择要导入的音轨"),
     import_ok_label=dict(en="OK", zh="确定"),
@@ -746,6 +748,127 @@ def _transcribe_target(
         return None, None, None
 
 
+def _crossfade(a, b, fade_ms=15, sr=24000):
+    """Join two audio arrays with a small crossfade at the seam."""
+    if fade_ms <= 0:
+        return np.concatenate([a, b])
+    n = min(int(fade_ms / 1000 * sr), len(a), len(b))
+    if n <= 0:
+        return np.concatenate([a, b])
+    fade = np.linspace(0.0, 1.0, n)
+    head = a[-n:] * (1.0 - fade) + b[:n] * fade
+    return np.concatenate([a[:-n], head, b[n:]])
+
+
+def _try_segmented_synthesis(
+    prompt_wav_path,
+    prompt_meta_path,
+    target_midi_path,
+    seg_json_path,
+    language,
+    control,
+    auto_shift,
+    pitch_shift,
+    n_step,
+    cfg,
+    session_id,
+):
+    """Read repeat JSON -> split target MIDI into segments -> synthesize each ->
+    stitch the generated audios back into one full song.
+
+    Returns the final WAV path, or None (caller then falls back to whole-song).
+    """
+    try:
+        from preprocess.tools.midi_parser import midi2notes, notes2meta, notes2midi, Note
+
+        with open(seg_json_path, "r", encoding="utf-8") as f:
+            seg_data = json.load(f)
+        segs = seg_data.get("segments") or []
+        if len(segs) <= 1:
+            return None
+
+        all_notes = midi2notes(target_midi_path)
+        seg_dir_root = ROOT / "outputs" / "gradio" / "split" / str(session_id)
+        seg_dir_root.mkdir(parents=True, exist_ok=True)
+
+        merged_wav = None
+        sr = 24000
+        language = language or "Mandarin"
+
+        for i, sg in enumerate(segs):
+            if "start_s" in sg:
+                s0 = float(sg["start_s"])
+            else:
+                s0 = float(sg["start_ms"]) / 1000.0
+            if "end_s" in sg:
+                s1 = float(sg["end_s"])
+            else:
+                s1 = float(sg["end_ms"]) / 1000.0
+
+            sub_notes = []
+            for n in all_notes:
+                n_start = n.start_s
+                n_end = n.end_s
+                if n_end <= s0 or n_start >= s1:
+                    continue
+                c_start, c_end = max(n_start, s0), min(n_end, s1)
+                if c_end - c_start <= 0:
+                    continue
+                sub_notes.append(Note(
+                    start_s=c_start - s0,
+                    note_dur=c_end - c_start,
+                    note_text=n.note_text,
+                    note_pitch=n.note_pitch,
+                    note_type=n.note_type,
+                ))
+            if not sub_notes:
+                continue
+
+            seg_meta = seg_dir_root / f"seg{i+1}_meta.json"
+            notes2meta(sub_notes, str(seg_meta), None, language, None)
+
+            # 將此段送給模型的音符存成獨立 MIDI（給使用者檢查歌詞是否有掉落）。
+            seg_midi = seg_dir_root / f"seg{i+1}.mid"
+            try:
+                notes2midi(sub_notes, str(seg_midi))
+                print(f"[split] seg{i+1} midi saved: {seg_midi}", flush=True)
+            except Exception as _midi_exc:
+                print(
+                    f"[split] seg{i+1} midi save failed: {_midi_exc}",
+                    file=sys.stderr, flush=True,
+                )
+
+            seg_out = seg_dir_root / f"out{i+1}"
+            ok, msg, seg_wav = APP_STATE.run_svs_from_paths(
+                prompt_wav_path=prompt_wav_path,
+                prompt_metadata_path=prompt_meta_path,
+                target_metadata_path=str(seg_meta),
+                control=control,
+                auto_shift=auto_shift,
+                pitch_shift=int(pitch_shift),
+                n_step=int(n_step),
+                cfg=float(cfg),
+                save_dir=seg_out,
+            )
+            if not ok or seg_wav is None:
+                print(f"[split] seg{i+1} failed: {msg}", file=sys.stderr, flush=True)
+                return None
+
+            audio, _ = librosa.load(str(seg_wav), sr=sr, mono=True)
+            merged_wav = audio if merged_wav is None else _crossfade(merged_wav, audio)
+
+        if merged_wav is None:
+            return None
+
+        out_path = seg_dir_root / "generated_merged.wav"
+        sf.write(str(out_path), merged_wav, sr)
+        return str(out_path)
+    except Exception:
+        _print_exception("_try_segmented_synthesis")
+        return None
+
+
+
 def _run_synthesis(
     prompt_audio,
     prompt_metadata,
@@ -756,6 +879,9 @@ def _run_synthesis(
     seed: int,
     n_step: int,
     cfg: float,
+    target_midi=None,           # optional split source
+    target_midi_json=None,      # optional repeat info
+    target_lyric_lang="Mandarin",
 ):
     """Run singing synthesis from prompt audio + prompt metadata + target metadata."""
     try:
@@ -778,6 +904,32 @@ def _run_synthesis(
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
+
+        # --- repeat JSON 分割流程 ---
+        # 僅在「score 控制 + 上傳了 MIDI 與 repeat JSON」時才做切割；
+        # 其餘情況（melody 控制、無 JSON 等）一律回退原本整首流程。
+        tgt_midi_path = _resolve_file_path(target_midi)
+        seg_json_path = _resolve_file_path(target_midi_json)
+        if control == "score" and tgt_midi_path and seg_json_path:
+            _session = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            _merged = _try_segmented_synthesis(
+                prompt_wav_path=prompt_wav_path,
+                prompt_meta_path=prompt_meta_path,
+                target_midi_path=tgt_midi_path,
+                seg_json_path=seg_json_path,
+                language=target_lyric_lang,
+                control=control,
+                auto_shift=auto_shift,
+                pitch_shift=int(pitch_shift),
+                n_step=int(n_step),
+                cfg=float(cfg),
+                session_id=_session,
+            )
+            if _merged:
+                return _merged
+            print("segmented synthesis unavailable; falling back to whole-song.",
+                  file=sys.stderr, flush=True)
+
         ok, msg, merged = APP_STATE.run_svs_from_paths(
             prompt_wav_path=prompt_wav_path,
             prompt_metadata_path=prompt_meta_path,
@@ -932,6 +1084,13 @@ def render_interface() -> gr.Blocks:
                     height=140,
                     interactive=True,
                 )
+                target_midi_json = gr.File(
+                    label=_i18n("target_midi_json_label"),
+                    type="filepath",
+                    file_types=[".json"],
+                    height=140,
+                    interactive=True,
+                )
                 target_vocal = gr.File(
                     type="filepath",
                     file_types=[".wav"],
@@ -1064,6 +1223,7 @@ def render_interface() -> gr.Blocks:
                 gr.update(label=_i18n("section_input_audio")),
                 gr.update(label=_i18n("section_transcriptions")),
                 gr.update(label=_i18n("section_synthesis")),
+                gr.update(label=_i18n("target_midi_json_label")),
             ]
 
         lang_choice.change(
@@ -1092,6 +1252,7 @@ def render_interface() -> gr.Blocks:
                 accordion_input_audio,
                 accordion_transcriptions,
                 accordion_synthesis,
+                target_midi_json,
             ],
         )
 
@@ -1148,6 +1309,9 @@ def render_interface() -> gr.Blocks:
                 seed_input,
                 n_step_input,
                 cfg_input,
+                target_midi,
+                target_midi_json,
+                target_lyric_lang,
             ],
             outputs=[output_audio],
         )

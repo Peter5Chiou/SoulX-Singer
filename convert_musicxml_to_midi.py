@@ -1,4 +1,5 @@
 import os
+import json
 import music21
 from mido import MidiFile, MidiTrack, MetaMessage, Message
 import tkinter as tk
@@ -22,6 +23,90 @@ def verse_lyrics_map(lyrics):
         if num not in mapping or (txt and not mapping[num]):
             mapping[num] = txt
     return mapping
+
+def find_repeat_markers(selected_part):
+    """Scan measure barlines for forward/backward repeat markers.
+
+    Returns (markers, complex_found):
+      markers       : [{'measure', 'direction', 'end_s'}, ...]
+      complex_found : True if ending/volta/D.C./D.S./al Coda detected.
+    Our output MIDI uses 120 BPM (tempo=500000) so each quarter = 0.5s;
+    measure.offset is in quarterLength units.
+    """
+    markers = []
+    complex_found = False
+    try:
+        from music21 import repeat as _m21repeat
+        if list(selected_part.recurse().getElementsByClass(_m21repeat.RepeatExpression)):
+            complex_found = True
+    except Exception:
+        pass
+    for m in selected_part.getElementsByClass(music21.stream.Measure):
+        for bl in (getattr(m, 'leftBarline', None), getattr(m, 'rightBarline', None)):
+            if bl is None:
+                continue
+            # music21 現代版本會直接把 bar.Repeat 當成 measure 的
+            # leftBarline / rightBarline（direction 為 'start'/'end'）；
+            # 舊版本則包在 Barline.repeat 屬性裡。兩種都要支援。
+            reps = []
+            if isinstance(bl, music21.bar.Repeat):
+                reps.append(bl)
+            else:
+                rep = getattr(bl, 'repeat', None)
+                if rep is not None:
+                    reps.extend(rep if isinstance(rep, (list, tuple)) else [rep])
+            for r in reps:
+                d = getattr(r, 'direction', None)
+                d = {'start': 'forward', 'end': 'backward',
+                     'start-end': 'forward-backward'}.get(d, d)
+                if d == 'forward-backward':
+                    d = ['forward', 'backward']
+                if isinstance(d, str):
+                    d = [d]
+                for dd in d:
+                    markers.append({
+                        'measure': int(m.number),
+                        'direction': dd,
+                        'end_s': round(m.offset * 0.5, 3),
+                    })
+            if getattr(bl, 'ending', None):
+                complex_found = True
+    return markers, complex_found
+
+
+def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, complex_found):
+    """Build expanded playback-order segments from repeat structure.
+
+    No repeat / complex-repeat -> single whole-song segment.
+    Simple backward repeat       -> one segment per lyric verse (the "jump back
+                                     and sing again" point becomes a boundary).
+    """
+    pass_duration_s = round(float(sum(qlen for _p, qlen, _l in notes_list)) * 0.5, 3)
+    verse_order = [v for v in range(1, max_verse_number + 1) if has_lyrics_for_verse(v)]
+    segments = []
+    if complex_found or not any(mk['direction'] == 'backward' for mk in markers):
+        total_s = pass_duration_s * max(1, len(verse_order))
+        segments.append({
+            'seg': 1,
+            'start_s': 0.0,
+            'end_s': total_s,
+            'start_ms': 0,
+            'end_ms': int(round(total_s * 1000)),
+            'lyrics_verse': verse_order[0] if verse_order else 1,
+        })
+    else:
+        for idx, v in enumerate(verse_order):
+            st = idx * pass_duration_s
+            en = st + pass_duration_s
+            segments.append({
+                'seg': idx + 1,
+                'start_s': st,
+                'end_s': en,
+                'start_ms': int(round(st * 1000)),
+                'end_ms': int(round(en * 1000)),
+                'lyrics_verse': v,
+            })
+    return segments
 
 def select_part_and_convert(xml_path):
     try:
@@ -140,6 +225,15 @@ def execute_conversion(selected_part, original_xml_path):
             return False
 
 
+        # --- repeat 時間點分析 ---
+        markers, complex_found = find_repeat_markers(selected_part)
+        segments = build_segments(
+            notes_list, max_verse_number, has_lyrics_for_verse,
+            markers, complex_found,
+        )
+        if complex_found:
+            print("偵測到複雜反覆結構 (volta / D.C. / D.S. 等)，此版不分割，整首送往模型。")
+
         # 內部重複寫入函式
         def append_verse(verse_number):
             for merged in notes_list:
@@ -172,11 +266,30 @@ def execute_conversion(selected_part, original_xml_path):
         output_midi_path = f"{base_path}_SoulX.mid"
         
         mid.save(output_midi_path)
-        
+
+        # --- 輸出 repeat 對應 JSON ---
+        repeat_json_path = f"{base_path}_SoulX.json"
+        payload = {
+            "source": os.path.basename(original_xml_path),
+            "midi": os.path.basename(output_midi_path),
+            "bpm": 120,
+            "ticks_per_beat": 480,
+            "second_per_beat": 0.5,
+            "repeat_markers": markers,
+            "complex_repeat_present": complex_found,
+            "segments": segments,
+        }
+        with open(repeat_json_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
         # 彈窗提示成功
         root_success = tk.Tk()
         root_success.withdraw()
-        messagebox.showinfo("成功", f"🎉 MIDI 轉換完成！\n已儲存至：\n{output_midi_path}")
+        messagebox.showinfo(
+            "成功",
+            f"🎉 MIDI 轉換完成！\n已儲存至：\n{output_midi_path}\n\n"
+            f"Repeat 對應檔：\n{repeat_json_path}",
+        )
         root_success.destroy()
         
     except Exception as e:

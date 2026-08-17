@@ -1,0 +1,46 @@
+{
+  "source": "牛背上的小孩.xml",
+  "midi": "牛背上的小孩_SoulX.mid",
+  "bpm": 120,
+  "ticks_per_beat": 480,
+  "second_per_beat": 0.5,
+  "repeat_markers": [
+    {
+      "measure": 1,
+      "direction": "forward",
+      "end_s": 0.0
+    },
+    {
+      "measure": 20,
+      "direction": "backward",
+      "end_s": 37.75
+    }
+  ],
+  "complex_repeat_present": false,
+  "segments": [
+    {
+      "seg": 1,
+      "start_s": 0.0,
+      "end_s": 39.75,
+      "start_ms": 0,
+      "end_ms": 39750,
+      "lyrics_verse": 1
+    },
+    {
+      "seg": 2,
+      "start_s": 39.75,
+      "end_s": 79.5,
+      "start_ms": 39750,
+      "end_ms": 79500,
+      "lyrics_verse": 2
+    },
+    {
+      "seg": 3,
+      "start_s": 79.5,
+      "end_s": 119.25,
+      "start_ms": 79500,
+      "end_ms": 119250,
+      "lyrics_verse": 3
+    }
+  ]
+}

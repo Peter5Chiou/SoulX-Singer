@@ -1,0 +1,19 @@
+{
+  "source": "慈光歌-S-S.musicxml",
+  "midi": "慈光歌-S-S_SoulX.mid",
+  "bpm": 120,
+  "ticks_per_beat": 480,
+  "second_per_beat": 0.5,
+  "repeat_markers": [],
+  "complex_repeat_present": false,
+  "segments": [
+    {
+      "seg": 1,
+      "start_s": 0.0,
+      "end_s": 81.0,
+      "start_ms": 0,
+      "end_ms": 81000,
+      "lyrics_verse": 1
+    }
+  ]
+}
