@@ -24,13 +24,13 @@ def verse_lyrics_map(lyrics):
             mapping[num] = txt
     return mapping
 
-def find_repeat_markers(selected_part):
+def find_repeat_markers(selected_part, second_per_beat=0.5):
     """Scan measure barlines for forward/backward repeat markers.
 
     Returns (markers, complex_found):
       markers       : [{'measure', 'direction', 'end_s'}, ...]
       complex_found : True if ending/volta/D.C./D.S./al Coda detected.
-    Our output MIDI uses 120 BPM (tempo=500000) so each quarter = 0.5s;
+    Our output MIDI uses the detected BPM, so we use second_per_beat.
     measure.offset is in quarterLength units.
     """
     markers = []
@@ -51,10 +51,17 @@ def find_repeat_markers(selected_part):
             reps = []
             if isinstance(bl, music21.bar.Repeat):
                 reps.append(bl)
-            else:
+            elif hasattr(bl, 'repeat'):
                 rep = getattr(bl, 'repeat', None)
                 if rep is not None:
                     reps.extend(rep if isinstance(rep, (list, tuple)) else [rep])
+            
+            # 額外檢查 Measure 是否有 repeat 屬性 (部分 music21 版本)
+            if not reps and hasattr(m, 'repeat'):
+                rep_attr = getattr(m, 'repeat')
+                if rep_attr:
+                    reps.append(rep_attr)
+
             for r in reps:
                 d = getattr(r, 'direction', None)
                 d = {'start': 'forward', 'end': 'backward',
@@ -67,25 +74,28 @@ def find_repeat_markers(selected_part):
                     markers.append({
                         'measure': int(m.number),
                         'direction': dd,
-                        'end_s': round(m.offset * 0.5, 3),
+                        'end_s': round(m.offset * second_per_beat, 3),
                     })
             if getattr(bl, 'ending', None):
                 complex_found = True
     return markers, complex_found
 
 
-def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, complex_found):
+def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, complex_found, second_per_beat=0.5):
     """Build expanded playback-order segments from repeat structure.
 
     No repeat / complex-repeat -> single whole-song segment.
     Simple backward repeat       -> one segment per lyric verse (the "jump back
-                                     and sing again" point becomes a boundary).
+                                  and sing again" point becomes a boundary).
     """
-    pass_duration_s = round(float(sum(qlen for _p, qlen, _l in notes_list)) * 0.5, 3)
     verse_order = [v for v in range(1, max_verse_number + 1) if has_lyrics_for_verse(v)]
     segments = []
-    if complex_found or not any(mk['direction'] == 'backward' for mk in markers):
-        total_s = pass_duration_s * max(1, len(verse_order))
+    backward_repeat_measures = [mk['measure'] for mk in markers if mk['direction'] == 'backward']
+    repeat_end_m = max(backward_repeat_measures) if (backward_repeat_measures and not complex_found) else None
+
+    if complex_found or not backward_repeat_measures:
+        total_qlen = sum(item[1] for item in notes_list)
+        total_s = round(float(total_qlen) * second_per_beat * max(1, len(verse_order)), 3)
         segments.append({
             'seg': 1,
             'start_s': 0.0,
@@ -95,17 +105,27 @@ def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, 
             'lyrics_verse': verse_order[0] if verse_order else 1,
         })
     else:
+        current_time_s = 0.0
         for idx, v in enumerate(verse_order):
-            st = idx * pass_duration_s
-            en = st + pass_duration_s
+            is_last_verse = (idx == len(verse_order) - 1)
+            v_qlen = 0.0
+            for item in notes_list:
+                m_num = item[3] if len(item) > 3 else None
+                if (not is_last_verse) and (repeat_end_m is not None) and (m_num is not None) and (m_num > repeat_end_m):
+                    continue
+                v_qlen += item[1]
+            v_dur_s = v_qlen * second_per_beat
+            st = current_time_s
+            en = st + v_dur_s
             segments.append({
                 'seg': idx + 1,
-                'start_s': st,
-                'end_s': en,
+                'start_s': round(st, 3),
+                'end_s': round(en, 3),
                 'start_ms': int(round(st * 1000)),
                 'end_ms': int(round(en * 1000)),
                 'lyrics_verse': v,
             })
+            current_time_s = en
     return segments
 
 def select_part_and_convert(xml_path):
@@ -132,10 +152,13 @@ def select_part_and_convert(xml_path):
         root.geometry("400x180")
         root.resizable(False, False)
         
+        # 強制視窗置頂，避免被推到後面
+        root.attributes('-topmost', True)
+        
         # 視窗置中
         root.update_idletasks()
         x = (root.winfo_screenwidth() - root.winfo_reqwidth()) // 2
-        y = (root.winfo_screenheight() - root.winfo_reqheight()) // 2
+        y = (root.winfo_screenheight() - root.winfo_reqwidth()) // 2
         root.geometry(f"+{x}+{y}")
 
         # 介面標籤
@@ -154,8 +177,24 @@ def select_part_and_convert(xml_path):
             selected_part = parts_dict[selected_name]
             root.destroy() # 關閉視窗
             
+            # 嘗試從樂譜中獲取 Tempo
+            bpm = 120 # 預設
+            try:
+                tempo_marks = score.recurse().getElementsByClass(music21.tempo.MetronomeMark)
+                if tempo_marks:
+                    mark = tempo_marks[0]
+                    # 根據 debug 結果，數值存放在 _number 屬性中
+                    if hasattr(mark, '_number') and mark._number is not None:
+                        bpm = int(mark._number)
+                    elif hasattr(mark, 'bpm'):
+                        bpm = int(mark.bpm)
+                    elif hasattr(mark, 'metronomeMark'):
+                        bpm = int(mark.metronomeMark)
+            except Exception as e:
+                print(f"Tempo 獲取失敗，使用預設 120: {e}")
+            
             # 執行核心轉換
-            execute_conversion(selected_part, xml_path)
+            execute_conversion(selected_part, xml_path, bpm)
 
         # 確認按鈕
         btn_confirm = ttk.Button(root, text="開始轉換", command=on_confirm)
@@ -166,78 +205,120 @@ def select_part_and_convert(xml_path):
     except Exception as e:
         messagebox.showerror("錯誤", f"讀取檔案失敗：\n{str(e)}")
 
-def execute_conversion(selected_part, original_xml_path):
+def execute_conversion(selected_part, original_xml_path, bpm=120):
     try:
-        # 只提取選定聲部中的所有音符與休止符（跳過 ChordSymbol 等和聲標記）
+        # 提取所有音符與休止符
         all_elements = selected_part.flatten().notesAndRests
-        raw_notes = [e for e in all_elements if isinstance(e, (music21.note.Note, music21.note.Rest))]
-
-        # 合併延音線（tie）：同音高、以 tie 相接的連續音符合併為一個音，時值相加
-        # 每個元素存為 (類型['note'/'rest'], 音高或None, 合併時值, 起始音符的lyrics)
-        merged_dur = 0.0
-        merged_pitch = None
-        merged_lyrics = []
+        
+        # 建立 notes_list，記錄 (pitch, duration, lyrics, measureNumber)
         notes_list = []
-        def flush():
-            nonlocal merged_dur, merged_pitch, merged_lyrics
+        valid_elements = [e for e in all_elements if isinstance(e, (music21.note.Note, music21.note.Rest)) and e.duration.quarterLength > 0]
+        valid_elements.sort(key=lambda e: e.offset)
+        
+        if not valid_elements:
+            notes_list = []
+        else:
+            merged_pitch = None
+            merged_dur = 0.0
+            merged_lyrics = []
+            merged_m_num = getattr(valid_elements[0], 'measureNumber', None)
+            
+            for i in range(len(valid_elements)):
+                el = valid_elements[i]
+                m_num = getattr(el, 'measureNumber', None)
+                
+                # 判定是否為延音 (tie): 同音高 且 offset 正好銜接
+                is_tie = False
+                if i > 0:
+                    prev = valid_elements[i-1]
+                    if isinstance(el, music21.note.Note) and isinstance(prev, music21.note.Note):
+                        same_pitch = el.pitch == prev.pitch
+                        contiguous = el.offset == prev.offset + prev.duration.quarterLength
+                        same_measure = getattr(el, 'measureNumber', None) == getattr(prev, 'measureNumber', None)
+                        if same_pitch and contiguous and same_measure:
+                            el_tie_type = getattr(el.tie, 'type', None)
+                            prev_tie_type = getattr(prev.tie, 'type', None)
+                            if el_tie_type in ('stop', 'continue') or prev_tie_type in ('start', 'continue'):
+                                is_tie = True        
+                                         
+                if isinstance(el, music21.note.Rest):
+                    # 先 flush 之前的音符
+                    if merged_dur > 0:
+                        notes_list.append((merged_pitch, merged_dur, merged_lyrics, merged_m_num))
+                        merged_dur, merged_pitch, merged_lyrics = 0.0, None, []
+                    
+                    notes_list.append((None, el.duration.quarterLength, [], m_num))
+                    
+                elif is_tie:
+                    merged_dur += el.duration.quarterLength
+                    if el.lyrics:
+                        merged_lyrics.extend(el.lyrics)
+                else:
+                    # Flush 之前的音符
+                    if merged_dur > 0:
+                        notes_list.append((merged_pitch, merged_dur, merged_lyrics, merged_m_num))
+                    
+                    merged_pitch = el.pitch.midi
+                    merged_dur = el.duration.quarterLength
+                    merged_lyrics = list(el.lyrics) if el.lyrics else []
+                    merged_m_num = m_num
+            
+            # 最後一次 flush
             if merged_dur > 0:
-                notes_list.append((merged_pitch, merged_dur, merged_lyrics))
-                merged_dur, merged_pitch, merged_lyrics = 0.0, None, []
-
-        for el in raw_notes:
-            if isinstance(el, music21.note.Rest):
-                flush()
-                notes_list.append((None, el.duration.quarterLength, []))
-                continue
-
-            pitch = el.pitch.midi
-            tie_type = el.tie.type if el.tie is not None else None
-            # 'stop'/'continue' 表示延續前一音；是延續時併入目前累積的音
-            if tie_type in ('stop', 'continue') and merged_pitch is not None:
-                merged_dur += el.duration.quarterLength
-            else:
-                flush()
-                merged_pitch = pitch
-                merged_dur = el.duration.quarterLength
-                merged_lyrics = list(el.lyrics) if el.lyrics else []
-        flush()
+                notes_list.append((merged_pitch, merged_dur, merged_lyrics, merged_m_num))
 
         # 建立全新的 MIDI（charset 設為 utf-8 以支援中文歌詞）
         mid = MidiFile(charset='utf-8')
         track = MidiTrack()
         mid.tracks.append(track)
         
-        # 設定 MIDI 預設速度 (BPM 120)
-        track.append(MetaMessage('set_tempo', tempo=500000, time=0))
+        # 設定 MIDI 速度 (動態 BPM)
+        midi_tempo = int(60000000 / bpm)
+        track.append(MetaMessage('set_tempo', tempo=midi_tempo, time=0))
         
-# 自動檢測樂譜中實際存在的段落數量（從 lyrics 的 number 屬性判斷）
+        # 計算每拍秒數
+        second_per_beat = 60.0 / bpm
+        
+        # 自動檢測樂譜中實際存在的段落數量（從 lyrics 的 number 屬性判斷）
         max_verse_number = 1
-        for _pitch, _qlen, lyrics in notes_list:
+        for item in notes_list:
+            lyrics = item[2]
             for lyr in lyrics:
                 if isinstance(lyr.number, int) and lyr.number > max_verse_number:
                     max_verse_number = lyr.number
 
         # 檢查每個段落是否有任何歌詞（段落 2 若完全沒有歌詞則跳過）
         def has_lyrics_for_verse(verse_number):
-            for _pitch, _qlen, lyrics in notes_list:
+            for item in notes_list:
+                lyrics = item[2]
                 if verse_lyrics_map(lyrics).get(verse_number, ""):
                     return True
             return False
 
 
         # --- repeat 時間點分析 ---
-        markers, complex_found = find_repeat_markers(selected_part)
+        markers, complex_found = find_repeat_markers(selected_part, second_per_beat=second_per_beat)
         segments = build_segments(
             notes_list, max_verse_number, has_lyrics_for_verse,
             markers, complex_found,
+            second_per_beat=second_per_beat,
         )
         if complex_found:
             print("偵測到複雜反覆結構 (volta / D.C. / D.S. 等)，此版不分割，整首送往模型。")
 
+        backward_repeat_measures = [mk['measure'] for mk in markers if mk['direction'] == 'backward']
+        repeat_end_m = max(backward_repeat_measures) if (backward_repeat_measures and not complex_found) else None
+
         # 內部重複寫入函式
-        def append_verse(verse_number):
+        def append_verse(verse_number, is_last_verse):
             for merged in notes_list:
-                pitch, qlen, lyrics = merged
+                pitch, qlen, lyrics = merged[0], merged[1], merged[2]
+                m_num = merged[3] if len(merged) > 3 else None
+                
+                # 若非最後一段，且該小節位於反覆結束記號之後，則跳過 (反覆折返)
+                if (not is_last_verse) and (repeat_end_m is not None) and (m_num is not None) and (m_num > repeat_end_m):
+                    continue
+
                 duration_ticks = int(qlen * 480)
                 
                 # 休止符
@@ -250,6 +331,7 @@ def execute_conversion(selected_part, original_xml_path):
                 if not lyric_text and verse_number != 1:
                     lyric_text = verse_lyrics_map(lyrics).get(1, "")
 
+                # --- 歌詞 MetaMessage 的 time 必須為 0，且必須在 note_on 之前發送 ---
                 if lyric_text:
                     track.append(MetaMessage('lyrics', text=lyric_text, time=0))
 
@@ -257,9 +339,10 @@ def execute_conversion(selected_part, original_xml_path):
                 track.append(Message('note_off', note=pitch, velocity=64, time=duration_ticks))
 
         # 寫入所有實際有歌詞的段落
-        for verse_num in range(1, max_verse_number + 1):
-            if has_lyrics_for_verse(verse_num):
-                append_verse(verse_number=verse_num)
+        verse_order = [v for v in range(1, max_verse_number + 1) if has_lyrics_for_verse(v)]
+        for idx, verse_num in enumerate(verse_order):
+            is_last = (idx == len(verse_order) - 1)
+            append_verse(verse_number=verse_num, is_last_verse=is_last)
         
         # 自動產生輸出檔名
         base_path, _ = os.path.splitext(original_xml_path)
@@ -272,9 +355,9 @@ def execute_conversion(selected_part, original_xml_path):
         payload = {
             "source": os.path.basename(original_xml_path),
             "midi": os.path.basename(output_midi_path),
-            "bpm": 120,
+            "bpm": bpm,
             "ticks_per_beat": 480,
-            "second_per_beat": 0.5,
+            "second_per_beat": round(second_per_beat, 3),
             "repeat_markers": markers,
             "complex_repeat_present": complex_found,
             "segments": segments,
