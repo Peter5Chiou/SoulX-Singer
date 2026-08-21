@@ -248,12 +248,91 @@ def _get_lyric_lang_choices():
 
 
 def _resolve_file_path(x):
-    """Gradio file input can be path string or (path, None) tuple."""
+    """Gradio file input can be path string, FileData, dict, or (path, None) tuple."""
     if x is None:
         return None
     if isinstance(x, tuple):
         x = x[0]
-    return x if (x and os.path.isfile(x)) else None
+    if isinstance(x, dict):
+        x = x.get("path") or x.get("name")
+    elif hasattr(x, "path"):
+        x = x.path
+    elif hasattr(x, "name"):
+        x = x.name
+    if isinstance(x, os.PathLike):
+        x = str(x)
+    return str(x) if (x and os.path.isfile(str(x))) else None
+
+
+def _find_companion_json(midi_input) -> str | None:
+    """Find a companion .json file for the given MIDI input.
+    Checks:
+    1. Same directory as the resolved file path (local path or temp folder).
+    2. In the workspace ROOT directory with the same stem name.
+    3. Recursively in subdirectories of ROOT (e.g. outputs/, etc.).
+    """
+    if midi_input is None:
+        return None
+
+    file_path = None
+    orig_name = None
+
+    if isinstance(midi_input, tuple):
+        midi_input = midi_input[0]
+
+    if isinstance(midi_input, dict):
+        file_path = midi_input.get("path") or midi_input.get("name")
+        orig_name = midi_input.get("orig_name")
+    elif hasattr(midi_input, "path"):
+        file_path = getattr(midi_input, "path", None)
+        orig_name = getattr(midi_input, "orig_name", None)
+    elif hasattr(midi_input, "name"):
+        file_path = getattr(midi_input, "name", None)
+        orig_name = getattr(midi_input, "orig_name", None)
+    elif isinstance(midi_input, (str, Path)):
+        file_path = str(midi_input)
+
+    stems = []
+    if orig_name:
+        stems.append(Path(orig_name).stem)
+    if file_path:
+        stems.append(Path(file_path).stem)
+
+    unique_stems = []
+    for s in stems:
+        if s and s not in unique_stems:
+            unique_stems.append(s)
+
+    if not unique_stems and not file_path:
+        return None
+
+    # 1. Check directory of file_path
+    if file_path and os.path.isfile(file_path):
+        parent_dir = Path(file_path).resolve().parent
+        for s in unique_stems:
+            for ext in (".json", ".JSON"):
+                candidate = parent_dir / f"{s}{ext}"
+                if candidate.is_file():
+                    return str(candidate)
+
+    # 2. Check workspace ROOT / current working directory
+    search_roots = [ROOT, Path.cwd()]
+    for sroot in search_roots:
+        for s in unique_stems:
+            for ext in (".json", ".JSON"):
+                candidate = (sroot / f"{s}{ext}").resolve()
+                if candidate.is_file():
+                    return str(candidate)
+
+    # 3. Check subdirectories of ROOT
+    for s in unique_stems:
+        for ext in (".json", ".JSON"):
+            target_filename = f"{s}{ext}"
+            for candidate in ROOT.glob(f"**/{target_filename}"):
+                if candidate.is_file():
+                    return str(candidate.resolve())
+
+    return None
 
 
 def _normalize_audio_input(audio):
@@ -608,46 +687,60 @@ def _filter_midi_tracks(midi_path: str, selected_keys, out_path: str) -> None:
 
 
 def _prepare_target_import(midi):
-    """Scan the uploaded target MIDI and expose its tracks for selection in the panel."""
+    """Scan the uploaded target MIDI and expose its tracks for selection in the panel.
+    If a .json file with the same filename exists in the same directory, auto-load it as repeat info.
+    """
     try:
-        midi = _resolve_file_path(midi)
-        if not midi:
-            return gr.update(choices=[], value=[]), gr.update()
-        info = _midi_track_info(midi)
+        midi_path = _resolve_file_path(midi)
+        if not midi_path:
+            return gr.update(choices=[], value=[]), gr.update(), gr.skip()
+        info = _midi_track_info(midi_path)
         choices = [(t["label"], t["key"]) for t in info]
         selected = [t["key"] for t in info if t["notes"] > 0]
-        return gr.update(choices=choices, value=selected), gr.update(visible=True)
+
+        companion_json = _find_companion_json(midi)
+        json_update = companion_json if companion_json else gr.skip()
+
+        return gr.update(choices=choices, value=selected), gr.update(visible=True), json_update
     except Exception:
         _print_exception("_prepare_target_import")
-        return gr.update(choices=[], value=[]), gr.update()
+        return gr.update(choices=[], value=[]), gr.update(), gr.skip()
 
 
-def _import_selected_target_tracks(midi, audio, language, selected):
+def _import_selected_target_tracks(midi, audio, language, selected, current_json=None):
     """Convert only the user-selected tracks of the target MIDI into metadata."""
     try:
-        midi = _resolve_file_path(midi)
-        if not midi:
-            return gr.skip(), gr.update(visible=False)
+        midi_path = _resolve_file_path(midi)
+        if not midi_path:
+            return gr.skip(), gr.update(visible=False), gr.skip()
         selected = list(selected or [])
         if not selected:
-            return gr.skip(), gr.update(visible=False)
+            return gr.skip(), gr.update(visible=False), gr.skip()
         audio = _normalize_audio_input(audio)
 
         session_base = _session_dir()
         meta_path = session_base / "transcriptions" / "target" / "metadata.json"
         filtered_midi_path = session_base / "transcriptions" / "target" / "import_selected.mid"
         filtered_midi_path.parent.mkdir(parents=True, exist_ok=True)
-        _filter_midi_tracks(midi, selected, str(filtered_midi_path))
+        _filter_midi_tracks(midi_path, selected, str(filtered_midi_path))
         APP_STATE.midi_parser.midi2meta(
             str(filtered_midi_path),
             str(meta_path),
             audio,
             language=language,
         )
-        return str(meta_path), gr.update(visible=False)
+
+        resolved_json = _resolve_file_path(current_json)
+        if not resolved_json:
+            companion = _find_companion_json(midi)
+            json_update = companion if companion else gr.skip()
+        else:
+            json_update = gr.skip()
+
+        return str(meta_path), gr.update(visible=False), json_update
     except Exception:
         _print_exception("_import_selected_target_tracks")
-        return gr.update(), gr.update(visible=False)
+        return gr.update(), gr.update(visible=False), gr.skip()
 
 
 def _transcribe_prompt(
@@ -910,7 +1003,10 @@ def _run_synthesis(
         # 其餘情況（melody 控制、無 JSON 等）一律回退原本整首流程。
         tgt_midi_path = _resolve_file_path(target_midi)
         seg_json_path = _resolve_file_path(target_midi_json)
+        if not seg_json_path:
+            seg_json_path = _find_companion_json(target_midi)
         if control == "score" and tgt_midi_path and seg_json_path:
+            print(f"[synthesis] Using repeat JSON: {seg_json_path}", flush=True)
             _session = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             _merged = _try_segmented_synthesis(
                 prompt_wav_path=prompt_wav_path,
@@ -1285,12 +1381,12 @@ def render_interface() -> gr.Blocks:
         target_midi.upload(
             fn=_prepare_target_import,
             inputs=[target_midi],
-            outputs=[import_tracks, import_panel],
+            outputs=[import_tracks, import_panel, target_midi_json],
         )
         import_ok.click(
             fn=_import_selected_target_tracks,
-            inputs=[target_midi, target_vocal, target_lyric_lang, import_tracks],
-            outputs=[target_metadata, import_panel],
+            inputs=[target_midi, target_vocal, target_lyric_lang, import_tracks, target_midi_json],
+            outputs=[target_metadata, import_panel, target_midi_json],
         )
         import_cancel.click(
             fn=lambda: gr.update(visible=False),

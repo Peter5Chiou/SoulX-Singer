@@ -1,0 +1,41 @@
+{
+  "source": "慈光歌-S.musicxml",
+  "midi": "慈光歌-S_SoulX.mid",
+  "bpm": 70,
+  "ticks_per_beat": 480,
+  "second_per_beat": 0.857,
+  "repeat_markers": [
+    {
+      "measure": 16,
+      "direction": "backward",
+      "end_s": 39.857
+    }
+  ],
+  "complex_repeat_present": false,
+  "segments": [
+    {
+      "seg": 1,
+      "start_s": 0.0,
+      "end_s": 41.143,
+      "start_ms": 0,
+      "end_ms": 41143,
+      "lyrics_verse": 1
+    },
+    {
+      "seg": 2,
+      "start_s": 41.143,
+      "end_s": 82.286,
+      "start_ms": 41143,
+      "end_ms": 82286,
+      "lyrics_verse": 2
+    },
+    {
+      "seg": 3,
+      "start_s": 82.286,
+      "end_s": 128.571,
+      "start_ms": 82286,
+      "end_ms": 128571,
+      "lyrics_verse": 3
+    }
+  ]
+}
