@@ -25,29 +25,49 @@ def verse_lyrics_map(lyrics):
     return mapping
 
 def find_repeat_markers(selected_part, second_per_beat=0.5):
-    """Scan measure barlines for forward/backward repeat markers.
+    """Scan measure barlines and expressions for repeats and navigation markers.
 
-    Returns (markers, complex_found):
-      markers       : [{'measure', 'direction', 'end_s'}, ...]
-      complex_found : True if ending/volta/D.C./D.S./al Coda detected.
-    Our output MIDI uses the detected BPM, so we use second_per_beat.
-    measure.offset is in quarterLength units.
+    Returns (markers, complex_found, navigation_info):
+      markers          : [{'measure', 'direction', 'end_s'}, ...]
+      complex_found    : True if unhandled ending/volta/al Coda detected.
+      navigation_info  : dict with jump navigation details (e.g. D.S. al Fine, D.C. al Fine) or None
     """
     markers = []
     complex_found = False
-    try:
-        from music21 import repeat as _m21repeat
-        if list(selected_part.recurse().getElementsByClass(_m21repeat.RepeatExpression)):
-            complex_found = True
-    except Exception:
-        pass
+    navigation_info = None
+
+    ds_m = None
+    dc_m = None
+    fine_m = None
+    segno_m = 1
+
     for m in selected_part.getElementsByClass(music21.stream.Measure):
+        m_num = int(m.number)
+        m_offset_s = round(float(m.offset) * second_per_beat, 3)
+
+        for el in m.recurse():
+            cname = type(el).__name__
+            text_val = str(getattr(el, 'text', '') or getattr(el, 'name', '') or getattr(el, 'content', '')).strip().lower()
+
+            if isinstance(el, music21.repeat.DalSegnoAlFine) or 'dal segno al fine' in text_val or 'd.s. al fine' in text_val or 'd.s.al fine' in text_val:
+                ds_m = m_num
+                markers.append({'measure': m_num, 'direction': 'd.s. al fine', 'end_s': m_offset_s})
+            elif isinstance(el, music21.repeat.DaCapoAlFine) or 'da capo al fine' in text_val or 'd.c. al fine' in text_val or 'd.c.al fine' in text_val:
+                dc_m = m_num
+                markers.append({'measure': m_num, 'direction': 'd.c. al fine', 'end_s': m_offset_s})
+            elif isinstance(el, music21.repeat.Fine) or text_val == 'fine':
+                fine_m = m_num
+                markers.append({'measure': m_num, 'direction': 'fine', 'end_s': m_offset_s})
+            elif isinstance(el, music21.repeat.Segno) or text_val == 'segno':
+                segno_m = m_num
+                markers.append({'measure': m_num, 'direction': 'segno', 'end_s': m_offset_s})
+            elif isinstance(el, music21.repeat.RepeatExpression):
+                # Other unhandled repeat expression (e.g., Coda / Segno with jump to Coda)
+                complex_found = True
+
         for bl in (getattr(m, 'leftBarline', None), getattr(m, 'rightBarline', None)):
             if bl is None:
                 continue
-            # music21 現代版本會直接把 bar.Repeat 當成 measure 的
-            # leftBarline / rightBarline（direction 為 'start'/'end'）；
-            # 舊版本則包在 Barline.repeat 屬性裡。兩種都要支援。
             reps = []
             if isinstance(bl, music21.bar.Repeat):
                 reps.append(bl)
@@ -55,8 +75,7 @@ def find_repeat_markers(selected_part, second_per_beat=0.5):
                 rep = getattr(bl, 'repeat', None)
                 if rep is not None:
                     reps.extend(rep if isinstance(rep, (list, tuple)) else [rep])
-            
-            # 額外檢查 Measure 是否有 repeat 屬性 (部分 music21 版本)
+
             if not reps and hasattr(m, 'repeat'):
                 rep_attr = getattr(m, 'repeat')
                 if rep_attr:
@@ -72,28 +91,92 @@ def find_repeat_markers(selected_part, second_per_beat=0.5):
                     d = [d]
                 for dd in d:
                     markers.append({
-                        'measure': int(m.number),
+                        'measure': m_num,
                         'direction': dd,
-                        'end_s': round(m.offset * second_per_beat, 3),
+                        'end_s': m_offset_s,
                     })
             if getattr(bl, 'ending', None):
                 complex_found = True
-    return markers, complex_found
+
+    if ds_m is not None and fine_m is not None:
+        navigation_info = {
+            'type': 'ds_al_fine',
+            'segno_m': segno_m,
+            'fine_m': fine_m,
+            'ds_m': ds_m,
+        }
+    elif dc_m is not None and fine_m is not None:
+        navigation_info = {
+            'type': 'dc_al_fine',
+            'segno_m': 1,
+            'fine_m': fine_m,
+            'dc_m': dc_m,
+        }
+
+    return markers, complex_found, navigation_info
 
 
-def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, complex_found, second_per_beat=0.5):
-    """Build expanded playback-order segments from repeat structure.
+def build_segments_and_notes(notes_list, max_verse_number, has_lyrics_for_verse, markers, complex_found, navigation_info=None, second_per_beat=0.5):
+    """Build expanded playback-order notes and JSON segments from repeat/navigation structure.
 
-    No repeat / complex-repeat -> single whole-song segment.
-    Simple backward repeat       -> one segment per lyric verse (the "jump back
-                                  and sing again" point becomes a boundary).
+    Returns (segments, expanded_notes):
+      expanded_notes: list of (pitch, qlen, lyrics, measure_number, verse_number, is_refrain)
     """
     verse_order = [v for v in range(1, max_verse_number + 1) if has_lyrics_for_verse(v)]
-    segments = []
-    backward_repeat_measures = [mk['measure'] for mk in markers if mk['direction'] == 'backward']
-    repeat_end_m = max(backward_repeat_measures) if (backward_repeat_measures and not complex_found) else None
+    if not verse_order:
+        verse_order = [1]
 
-    if complex_found or not backward_repeat_measures:
+    segments = []
+    expanded_notes = []
+
+    if navigation_info and navigation_info.get('type') in ('ds_al_fine', 'dc_al_fine'):
+        segno_m = navigation_info.get('segno_m', 1)
+        fine_m = navigation_info.get('fine_m')
+        ds_m = navigation_info.get('ds_m') or navigation_info.get('dc_m')
+
+        # 分離副歌 (Segno -> Fine) 與 主歌 (Fine 之後到 D.S.)
+        refrain_notes = [n for n in notes_list if n[3] is not None and segno_m <= n[3] <= fine_m]
+        verse_body_notes = [n for n in notes_list if n[3] is not None and fine_m < n[3] <= ds_m]
+        outro_notes = [n for n in notes_list if n[3] is not None and n[3] > ds_m]
+
+        current_time_s = 0.0
+
+        for idx, v in enumerate(verse_order):
+            seg_start_s = current_time_s
+
+            # 第一段如果存在樂曲開頭的副歌 (Intro Refrain)，先演奏一次
+            if idx == 0 and refrain_notes:
+                for n in refrain_notes:
+                    expanded_notes.append((n[0], n[1], n[2], n[3], 1, True))
+                    current_time_s += n[1] * second_per_beat
+
+            # 演唱當前段落主歌
+            for n in verse_body_notes:
+                expanded_notes.append((n[0], n[1], n[2], n[3], v, False))
+                current_time_s += n[1] * second_per_beat
+
+            # D.S. 回到副歌唱至 Fine
+            for n in refrain_notes:
+                expanded_notes.append((n[0], n[1], n[2], n[3], 1, True))
+                current_time_s += n[1] * second_per_beat
+
+            # 若是最後一段且有 outro 小節
+            if idx == len(verse_order) - 1 and outro_notes:
+                for n in outro_notes:
+                    expanded_notes.append((n[0], n[1], n[2], n[3], v, False))
+                    current_time_s += n[1] * second_per_beat
+
+            seg_end_s = current_time_s
+            segments.append({
+                'seg': idx + 1,
+                'start_s': round(seg_start_s, 3),
+                'end_s': round(seg_end_s, 3),
+                'start_ms': int(round(seg_start_s * 1000)),
+                'end_ms': int(round(seg_end_s * 1000)),
+                'lyrics_verse': v,
+            })
+
+    elif complex_found or not [mk for mk in markers if mk['direction'] == 'backward']:
         total_qlen = sum(item[1] for item in notes_list)
         total_s = round(float(total_qlen) * second_per_beat * max(1, len(verse_order)), 3)
         segments.append({
@@ -104,19 +187,23 @@ def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, 
             'end_ms': int(round(total_s * 1000)),
             'lyrics_verse': verse_order[0] if verse_order else 1,
         })
+        for v in verse_order:
+            for item in notes_list:
+                expanded_notes.append((item[0], item[1], item[2], item[3], v, False))
     else:
+        backward_repeat_measures = [mk['measure'] for mk in markers if mk['direction'] == 'backward']
+        repeat_end_m = max(backward_repeat_measures) if backward_repeat_measures else None
         current_time_s = 0.0
         for idx, v in enumerate(verse_order):
             is_last_verse = (idx == len(verse_order) - 1)
-            v_qlen = 0.0
+            st = current_time_s
             for item in notes_list:
                 m_num = item[3] if len(item) > 3 else None
                 if (not is_last_verse) and (repeat_end_m is not None) and (m_num is not None) and (m_num > repeat_end_m):
                     continue
-                v_qlen += item[1]
-            v_dur_s = v_qlen * second_per_beat
-            st = current_time_s
-            en = st + v_dur_s
+                expanded_notes.append((item[0], item[1], item[2], item[3], v, False))
+                current_time_s += item[1] * second_per_beat
+            en = current_time_s
             segments.append({
                 'seg': idx + 1,
                 'start_s': round(st, 3),
@@ -125,7 +212,16 @@ def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, 
                 'end_ms': int(round(en * 1000)),
                 'lyrics_verse': v,
             })
-            current_time_s = en
+
+    return segments, expanded_notes
+
+
+def build_segments(notes_list, max_verse_number, has_lyrics_for_verse, markers, complex_found, second_per_beat=0.5, navigation_info=None):
+    segments, _ = build_segments_and_notes(
+        notes_list, max_verse_number, has_lyrics_for_verse,
+        markers, complex_found, navigation_info=navigation_info,
+        second_per_beat=second_per_beat
+    )
     return segments
 
 def select_part_and_convert(xml_path):
@@ -205,7 +301,7 @@ def select_part_and_convert(xml_path):
     except Exception as e:
         messagebox.showerror("錯誤", f"讀取檔案失敗：\n{str(e)}")
 
-def execute_conversion(selected_part, original_xml_path, bpm=120):
+def execute_conversion(selected_part, original_xml_path, bpm=120, show_popup=True):
     try:
         # 提取所有音符與休止符
         all_elements = selected_part.flatten().notesAndRests
@@ -296,53 +392,41 @@ def execute_conversion(selected_part, original_xml_path, bpm=120):
             return False
 
 
-        # --- repeat 時間點分析 ---
-        markers, complex_found = find_repeat_markers(selected_part, second_per_beat=second_per_beat)
-        segments = build_segments(
+        # --- repeat & navigation 分析 ---
+        markers, complex_found, nav_info = find_repeat_markers(selected_part, second_per_beat=second_per_beat)
+        segments, expanded_notes = build_segments_and_notes(
             notes_list, max_verse_number, has_lyrics_for_verse,
-            markers, complex_found,
+            markers, complex_found, navigation_info=nav_info,
             second_per_beat=second_per_beat,
         )
         if complex_found:
-            print("偵測到複雜反覆結構 (volta / D.C. / D.S. 等)，此版不分割，整首送往模型。")
+            print("偵測到未支援之複雜反覆結構 (例如 Coda 標記等)，此版不分割，整首送往模型。")
+        elif nav_info:
+            print(f"偵測到導航結構 ({nav_info.get('type')})，已自動展開為標準演出順序。")
 
-        backward_repeat_measures = [mk['measure'] for mk in markers if mk['direction'] == 'backward']
-        repeat_end_m = max(backward_repeat_measures) if (backward_repeat_measures and not complex_found) else None
+        # 依展開順序寫入 MIDI 音符與歌詞
+        for pitch, qlen, lyrics, m_num, v_num, is_refrain in expanded_notes:
+            duration_ticks = int(qlen * 480)
 
-        # 內部重複寫入函式
-        def append_verse(verse_number, is_last_verse):
-            for merged in notes_list:
-                pitch, qlen, lyrics = merged[0], merged[1], merged[2]
-                m_num = merged[3] if len(merged) > 3 else None
-                
-                # 若非最後一段，且該小節位於反覆結束記號之後，則跳過 (反覆折返)
-                if (not is_last_verse) and (repeat_end_m is not None) and (m_num is not None) and (m_num > repeat_end_m):
-                    continue
+            # 休止符
+            if pitch is None:
+                track.append(Message('note_off', note=0, velocity=0, time=duration_ticks))
+                continue
 
-                duration_ticks = int(qlen * 480)
-                
-                # 休止符
-                if pitch is None:
-                    track.append(Message('note_off', note=0, velocity=0, time=duration_ticks))
-                    continue
-                
-                # 依段落編號取歌詞（已清掉數字/標點/符號）；若該段沒歌詞，則回退到第一段
-                lyric_text = verse_lyrics_map(lyrics).get(verse_number, "")
-                if not lyric_text and verse_number != 1:
+            # 依段落編號取歌詞（已清掉數字/標點/符號）；副歌固定使用第 1 段/主歌詞
+            if is_refrain:
+                lyric_text = verse_lyrics_map(lyrics).get(1, "")
+            else:
+                lyric_text = verse_lyrics_map(lyrics).get(v_num, "")
+                if not lyric_text and v_num != 1:
                     lyric_text = verse_lyrics_map(lyrics).get(1, "")
 
-                # --- 歌詞 MetaMessage 的 time 必須為 0，且必須在 note_on 之前發送 ---
-                if lyric_text:
-                    track.append(MetaMessage('lyrics', text=lyric_text, time=0))
+            # --- 歌詞 MetaMessage 的 time 必須為 0，且必須在 note_on 之前發送 ---
+            if lyric_text:
+                track.append(MetaMessage('lyrics', text=lyric_text, time=0))
 
-                track.append(Message('note_on', note=pitch, velocity=64, time=0))
-                track.append(Message('note_off', note=pitch, velocity=64, time=duration_ticks))
-
-        # 寫入所有實際有歌詞的段落
-        verse_order = [v for v in range(1, max_verse_number + 1) if has_lyrics_for_verse(v)]
-        for idx, verse_num in enumerate(verse_order):
-            is_last = (idx == len(verse_order) - 1)
-            append_verse(verse_number=verse_num, is_last_verse=is_last)
+            track.append(Message('note_on', note=pitch, velocity=64, time=0))
+            track.append(Message('note_off', note=pitch, velocity=64, time=duration_ticks))
         
         # 自動產生輸出檔名
         base_path, _ = os.path.splitext(original_xml_path)
@@ -365,39 +449,62 @@ def execute_conversion(selected_part, original_xml_path, bpm=120):
         with open(repeat_json_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
+        print(f"🎉 轉換成功！\nMIDI: {output_midi_path}\nJSON: {repeat_json_path}")
+
         # 彈窗提示成功
-        root_success = tk.Tk()
-        root_success.withdraw()
-        messagebox.showinfo(
-            "成功",
-            f"🎉 MIDI 轉換完成！\n已儲存至：\n{output_midi_path}\n\n"
-            f"Repeat 對應檔：\n{repeat_json_path}",
-        )
-        root_success.destroy()
+        if show_popup:
+            root_success = tk.Tk()
+            root_success.withdraw()
+            messagebox.showinfo(
+                "成功",
+                f"🎉 MIDI 轉換完成！\n已儲存至：\n{output_midi_path}\n\n"
+                f"Repeat 對應檔：\n{repeat_json_path}",
+            )
+            root_success.destroy()
         
     except Exception as e:
-        root_err = tk.Tk()
-        root_err.withdraw()
-        messagebox.showerror("轉換失敗", f"發生未知錯誤：\n{str(e)}")
-        root_err.destroy()
+        print(f"轉換失敗：{e}")
+        if show_popup:
+            root_err = tk.Tk()
+            root_err.withdraw()
+            messagebox.showerror("轉換失敗", f"發生未知錯誤：\n{str(e)}")
+            root_err.destroy()
 
 # ==========================================
-# 程式進入點：自動打開檔案選擇器
+# 程式進入點：支援命令行引數或自動打開檔案選擇器
 # ==========================================
 if __name__ == "__main__":
-    # 初始化一個隱藏的主視窗，純粹為了調用檔案選擇器
-    main_init = tk.Tk()
-    main_init.withdraw()
-    
-    # 讓使用者選擇 MusicXML 檔案
-    file_path = filedialog.askopenfilename(
-        title="請選取從 MuseScore 導出的 MusicXML 檔案",
-        filetypes=[("MusicXML 檔案", "*.musicxml *.xml"), ("所有檔案", "*.*")]
-    )
-    
-    main_init.destroy()
-    
-    if file_path:
-        select_part_and_convert(file_path)
+    import sys
+    if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
+        file_path = sys.argv[1]
+        score = music21.converter.parse(file_path)
+        part = score.parts[0]
+        bpm = 120
+        try:
+            tempo_marks = score.recurse().getElementsByClass(music21.tempo.MetronomeMark)
+            if tempo_marks:
+                mark = tempo_marks[0]
+                if hasattr(mark, '_number') and mark._number is not None:
+                    bpm = int(mark._number)
+                elif hasattr(mark, 'bpm'):
+                    bpm = int(mark.bpm)
+        except Exception:
+            pass
+        execute_conversion(part, file_path, bpm=bpm, show_popup=False)
     else:
-        print("未選擇任何檔案，程式結束。")
+        # 初始化一個隱藏的主視窗，純粹為了調用檔案選擇器
+        main_init = tk.Tk()
+        main_init.withdraw()
+        
+        # 讓使用者選擇 MusicXML 檔案
+        file_path = filedialog.askopenfilename(
+            title="請選取從 MuseScore 導出的 MusicXML 檔案",
+            filetypes=[("MusicXML 檔案", "*.musicxml *.xml"), ("所有檔案", "*.*")]
+        )
+        
+        main_init.destroy()
+        
+        if file_path:
+            select_part_and_convert(file_path)
+        else:
+            print("未選擇任何檔案，程式結束。")

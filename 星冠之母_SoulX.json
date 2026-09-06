@@ -1,0 +1,64 @@
+{
+  "source": "星冠之母.musicxml",
+  "midi": "星冠之母_SoulX.mid",
+  "bpm": 80,
+  "ticks_per_beat": 480,
+  "second_per_beat": 0.75,
+  "repeat_markers": [
+    {
+      "measure": 1,
+      "direction": "forward",
+      "end_s": 0.0
+    },
+    {
+      "measure": 8,
+      "direction": "fine",
+      "end_s": 21.0
+    },
+    {
+      "measure": 16,
+      "direction": "d.s. al fine",
+      "end_s": 45.0
+    },
+    {
+      "measure": 16,
+      "direction": "backward",
+      "end_s": 45.0
+    }
+  ],
+  "complex_repeat_present": false,
+  "segments": [
+    {
+      "seg": 1,
+      "start_s": 0.0,
+      "end_s": 72.0,
+      "start_ms": 0,
+      "end_ms": 72000,
+      "lyrics_verse": 1
+    },
+    {
+      "seg": 2,
+      "start_s": 72.0,
+      "end_s": 120.0,
+      "start_ms": 72000,
+      "end_ms": 120000,
+      "lyrics_verse": 2
+    },
+    {
+      "seg": 3,
+      "start_s": 120.0,
+      "end_s": 168.0,
+      "start_ms": 120000,
+      "end_ms": 168000,
+      "lyrics_verse": 3
+    },
+    {
+      "seg": 4,
+      "start_s": 168.0,
+      "end_s": 216.0,
+      "start_ms": 168000,
+      "end_ms": 216000,
+      "lyrics_verse": 4
+    }
+  ]
+}
