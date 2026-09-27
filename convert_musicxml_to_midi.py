@@ -279,8 +279,10 @@ def select_part_and_convert(xml_path):
                 tempo_marks = score.recurse().getElementsByClass(music21.tempo.MetronomeMark)
                 if tempo_marks:
                     mark = tempo_marks[0]
-                    # 根據 debug 結果，數值存放在 _number 屬性中
-                    if hasattr(mark, '_number') and mark._number is not None:
+                    # 優先使用 getQuarterBPM()（可正確讀取 <sound tempo> 的 playback-only 數值）
+                    if hasattr(mark, 'getQuarterBPM'):
+                        bpm = int(round(mark.getQuarterBPM()))
+                    elif hasattr(mark, '_number') and mark._number is not None:
                         bpm = int(mark._number)
                     elif hasattr(mark, 'bpm'):
                         bpm = int(mark.bpm)
@@ -484,7 +486,9 @@ if __name__ == "__main__":
             tempo_marks = score.recurse().getElementsByClass(music21.tempo.MetronomeMark)
             if tempo_marks:
                 mark = tempo_marks[0]
-                if hasattr(mark, '_number') and mark._number is not None:
+                if hasattr(mark, 'getQuarterBPM'):
+                    bpm = int(round(mark.getQuarterBPM()))
+                elif hasattr(mark, '_number') and mark._number is not None:
                     bpm = int(mark._number)
                 elif hasattr(mark, 'bpm'):
                     bpm = int(mark.bpm)

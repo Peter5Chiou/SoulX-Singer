@@ -1,0 +1,19 @@
+{
+  "source": "基督再來時.musicxml",
+  "midi": "基督再來時_SoulX.mid",
+  "bpm": 76,
+  "ticks_per_beat": 480,
+  "second_per_beat": 0.789,
+  "repeat_markers": [],
+  "complex_repeat_present": true,
+  "segments": [
+    {
+      "seg": 1,
+      "start_s": 0.0,
+      "end_s": 265.263,
+      "start_ms": 0,
+      "end_ms": 265263,
+      "lyrics_verse": 1
+    }
+  ]
+}

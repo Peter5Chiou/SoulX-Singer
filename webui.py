@@ -853,6 +853,84 @@ def _crossfade(a, b, fade_ms=15, sr=24000):
     return np.concatenate([a[:-n], head, b[n:]])
 
 
+def _representative_rms(audio, sr=24000):
+    window = max(1, int(0.5 * sr))
+    values = [
+        float(np.sqrt(np.mean(audio[i:i + window] ** 2) + 1e-8))
+        for i in range(0, len(audio), window)
+    ]
+    active = [value for value in values if value > 1e-4]
+    return float(np.median(active)) if active else 0.0
+
+
+def _match_segment_gain(audio, reference_rms, sr=24000):
+    """Match a generated segment to a fixed reference without normalizing silence."""
+    if len(audio) == 0 or reference_rms <= 1e-4:
+        return audio
+
+    current_rms = _representative_rms(audio, sr=sr)
+    if current_rms <= 1e-4:
+        return audio
+
+    gain = float(np.clip(reference_rms / current_rms, 0.5, 2.0))
+    return audio * gain
+
+
+def _stabilize_local_loudness(audio, sr=24000):
+    """Smooth short-term vocal level drops while leaving rests alone."""
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.size == 0:
+        return audio
+
+    window = max(1, int(0.4 * sr))
+    hop = max(1, int(0.1 * sr))
+    if audio.size < window:
+        return audio
+
+    starts = np.arange(0, max(1, audio.size - window + 1), hop)
+    if starts[-1] != max(0, audio.size - window):
+        starts = np.append(starts, max(0, audio.size - window))
+
+    rms_values = np.array([
+        float(np.sqrt(np.mean(audio[start:start + window] ** 2) + 1e-8))
+        for start in starts
+    ], dtype=np.float32)
+    non_silent = rms_values[rms_values > 1e-4]
+    if non_silent.size == 0:
+        return audio
+
+    rough_target = float(np.percentile(non_silent, 60))
+    active_threshold = max(0.008, rough_target * 0.16)
+    active = rms_values > active_threshold
+    if int(active.sum()) < 3:
+        return audio
+
+    target_rms = float(np.percentile(rms_values[active], 55))
+    if target_rms <= 1e-4:
+        return audio
+
+    gains = np.ones_like(rms_values)
+    gains[active] = np.power(target_rms / np.maximum(rms_values[active], 1e-4), 0.85)
+    gains = np.clip(gains, 0.55, 2.8)
+
+    smooth_frames = max(1, int(1.0 / 0.1))
+    if smooth_frames > 1 and gains.size > 1:
+        pad_left = smooth_frames // 2
+        pad_right = smooth_frames - 1 - pad_left
+        kernel = np.ones(smooth_frames, dtype=np.float32) / smooth_frames
+        gains = np.convolve(np.pad(gains, (pad_left, pad_right), mode="edge"), kernel, mode="valid")
+
+    centers = starts + window // 2
+    sample_positions = np.arange(audio.size)
+    sample_gains = np.interp(sample_positions, centers, gains, left=gains[0], right=gains[-1]).astype(np.float32)
+    stabilized = audio * sample_gains
+
+    peak = float(np.max(np.abs(stabilized)))
+    if peak > 0.98:
+        stabilized *= 0.98 / peak
+    return stabilized.astype(np.float32)
+
+
 def _try_segmented_synthesis(
     prompt_wav_path,
     prompt_meta_path,
@@ -885,6 +963,7 @@ def _try_segmented_synthesis(
         seg_dir_root.mkdir(parents=True, exist_ok=True)
 
         merged_wav = None
+        reference_rms = 0.0
         sr = 24000
         language = language or "Mandarin"
 
@@ -948,11 +1027,15 @@ def _try_segmented_synthesis(
                 return None
 
             audio, _ = librosa.load(str(seg_wav), sr=sr, mono=True)
+            if reference_rms <= 1e-4:
+                reference_rms = _representative_rms(audio, sr=sr)
+            audio = _match_segment_gain(audio, reference_rms, sr=sr)
             merged_wav = audio if merged_wav is None else _crossfade(merged_wav, audio)
 
         if merged_wav is None:
             return None
 
+        merged_wav = _stabilize_local_loudness(merged_wav, sr=sr)
         out_path = seg_dir_root / "generated_merged.wav"
         sf.write(str(out_path), merged_wav, sr)
         return str(out_path)

@@ -43,3 +43,4 @@ dist/
 *.mid
 *.xml
 *.musicxml
+/.vs
