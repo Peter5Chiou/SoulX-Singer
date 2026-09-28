@@ -1,1 +1,1 @@
-.venv\scripts\python.exe convert_musicxml_to_midi.py
+.venv\scripts\python.exe convert_musicxml_to_midi_OOP.py
